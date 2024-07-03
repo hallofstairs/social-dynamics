@@ -9,13 +9,13 @@ packages = [{ include = "social_dynamics" }]
 [tool.poetry.dependencies]
 python = "^3.10"
 h5py = "^3.11.0"
-numpy = "^2.0.0"
+numpy = "<2.0"
 scipy = "^1.14.0"
 ollama = "^0.2.1"
 requests = "^2.32.3"
 pandas = "^2.2.2"
-raphtory = "^0.9.3"
 networkx = "^3.3"
+raphtory = { path = "raphtory-0.9.3-cp310-cp310-macosx_11_0_arm64.whl" }
 
 
 [tool.poetry.group.dev.dependencies]
