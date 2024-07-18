@@ -2,7 +2,6 @@
 
 import json
 import random
-from typing import Any
 
 import numpy as np
 from pyvis.network import Network
