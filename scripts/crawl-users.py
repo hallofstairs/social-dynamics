@@ -1,5 +1,3 @@
-# %%
-
 import csv
 import json
 
@@ -14,6 +12,8 @@ unsaved_dids = False
 
 CSV_FILE = "dids.csv"
 PLC_URL = "https://plc.directory"
+
+# TODO: RATE LIMIT = 500 req. per 5 min.
 
 
 def write_to_file(data):
@@ -38,6 +38,7 @@ try:
         records = json.loads("[" + res.text.replace("\n", ",") + "]")
 
         if len(records) == 0:
+            print("OUT OF RECORDS, ", res.text)
             break
 
         for record in records:
