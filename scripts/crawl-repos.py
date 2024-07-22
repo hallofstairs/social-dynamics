@@ -1,5 +1,4 @@
 import csv
-import fcntl
 import json
 import os
 from typing import Any, Generator, Iterable
@@ -7,9 +6,10 @@ from typing import Any, Generator, Iterable
 import requests
 from libipld import decode_car  # type: ignore
 
-NUM_FILES = 20
 STREAM_DIR = "./stream"
-DATE_CUTOFF = "2022-11-17"  # TODO: Extend
+DID_PATH = "./dids.csv"
+START_DATE_CUTOFF = "2022-11-16"  # Start of bsky network
+END_DATE_CUTOFF = "2023-07-01"  # TODO: Extend
 
 
 def fetch_repo(did: str) -> Generator[dict[str, Any], None, None]:
@@ -36,12 +36,8 @@ def fetch_repo(did: str) -> Generator[dict[str, Any], None, None]:
 
 def append_record(record: dict[str, Any], bucket_path: str):
     with open(bucket_path, "a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            json.dump(record, f)
-            f.write("\n")
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+        json.dump(record, f)
+        f.write("\n")
 
 
 def distribute_records(records: Iterable[dict[str, Any]], log: bool = True) -> None:
@@ -50,8 +46,11 @@ def distribute_records(records: Iterable[dict[str, Any]], log: bool = True) -> N
     try:
         for record in records:
             file_idx = record["createdAt"][:10]  # YYYY-MM-DD
-            if file_idx > DATE_CUTOFF:
+            if file_idx > END_DATE_CUTOFF:
                 break
+
+            if file_idx < START_DATE_CUTOFF:
+                continue
 
             file_path = f"{STREAM_DIR}/{file_idx}.jsonl"
             append_record(record, file_path)
@@ -64,36 +63,30 @@ def distribute_records(records: Iterable[dict[str, Any]], log: bool = True) -> N
         print("ERROR: ", e)
 
 
-def read_csv(path: str):
-    with open(path, "r") as csvfile:
-        reader = csv.DictReader(csvfile)
-        return list(reader)
-
-
 if __name__ == "__main__":
     os.makedirs(STREAM_DIR, exist_ok=True)
-    did_list = read_csv("./dids-2024-02-06.csv")
-    # did_list = [
-    #     {
-    #         "did": "did:plc:p7flpn65bzf3kzjrp2xftshq",
-    #         "created_at": "2023-04-07T20:36:34.100Z",
-    #     }
-    # ]
+    total_users = 0
 
-    for did_info in did_list:
-        did = did_info["did"]
-        created_at = did_info["created_at"]
+    with open(DID_PATH, "r") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            did = row["did"]
+            created_at = row["created_at"]
 
-        if created_at[:10] > DATE_CUTOFF:
-            break
+            if created_at[:10] > END_DATE_CUTOFF:
+                break
 
-        print("PROCESSING: ", did)
-        profile_create_record = {
-            "did": did,
-            "$type": "app.bsky.actor.profile",
-            "createdAt": created_at,
-        }
-        distribute_records([profile_create_record], False)
+            print("PROCESSING: ", did)
+            profile_create_record = {
+                "did": did,
+                "$type": "app.bsky.actor.profile",
+                "createdAt": created_at,
+            }
+            distribute_records([profile_create_record], False)
 
-        records = fetch_repo(did)
-        distribute_records(records)
+            records = fetch_repo(did)
+            distribute_records(records)
+
+            total_users += 1
+
+    print(f"Finished crawl to {END_DATE_CUTOFF}. Total users: {total_users}")
