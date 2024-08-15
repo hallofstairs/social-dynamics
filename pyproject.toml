@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["Jett Hollister <jetthollister@pm.me>"]
 readme = "README.md"
-packages = [{ include = "social_dynamics" }]
+packages = [{ include = "graph_tool" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
@@ -22,7 +22,8 @@ python-dotenv = "^1.0.1"
 cbor2 = "^5.6.4"
 raphtory = "^0.10.0"
 ollama = "^0.3.0"
-
+graph-tool = { path = "./graph_tool" }
+pycairo = "^1.26.1"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.4"
