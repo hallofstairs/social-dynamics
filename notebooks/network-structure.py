@@ -13,48 +13,9 @@ import raphtory.algorithms as alg
 
 import graph_tool.all as gt
 
+STREAM_DIR = "../data/stream-2023-07-01"
+
 # %% Functions
-
-
-# def generate_synthetic_networks(n: int, m: int) -> dict[str, nx.Graph]:
-#     """Generate synthetic networks for comparison."""
-#     erdos_renyi = nx.erdos_renyi_graph(n, m / (n * (n - 1) / 2))
-#     barabasi_albert = nx.barabasi_albert_graph(n, int(m / n))
-#     watts_strogatz = nx.watts_strogatz_graph(n, int(2 * m / n), 0.1)
-#     return {
-#         "Erdős-Rényi": erdos_renyi,
-#         "Barabási-Albert": barabasi_albert,
-#         "Watts-Strogatz": watts_strogatz,
-#     }
-
-
-def compute_metrics(G: rp.Graph) -> dict[str, float]:
-    """Compute key metrics for the largest component of a given network."""
-    return {
-        "Average Clustering": alg.single_source_shortest_path(G),
-        "Average Path Length": nx.average_shortest_path_length(G_largest),
-        "Assortativity": nx.degree_assortativity_coefficient(G_largest),
-        "Density": nx.density(G_largest),
-        "Network Size": G_largest.number_of_nodes(),
-    }
-
-
-def plot_metrics_over_time(
-    metrics: dict[str, dict[str, list[float]]], timestamps: list[str]
-) -> None:
-    fig, axs = plt.subplots(2, 2, figsize=(15, 15))
-    fig.suptitle("Network Metrics Over Time")
-
-    for i, (metric, ax) in enumerate(zip(metrics["Real"].keys(), axs.flatten())):
-        for network_type, network_metrics in metrics.items():
-            ax.plot(timestamps, network_metrics[metric], label=network_type)
-        ax.set_title(metric)
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Value")
-        ax.legend()
-
-    plt.tight_layout()
-    plt.show()
 
 
 def generate_timestamps(until: str) -> list[str]:
@@ -66,96 +27,6 @@ def generate_timestamps(until: str) -> list[str]:
         (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
         for i in range(delta.days + 1)
     ]
-
-
-# %% Execution
-
-STREAM_DIR = "../data/stream-2023-07-01"
-
-
-if __name__ == "__main__":
-    timestamps = generate_timestamps(until="2023-04-01")
-
-    metrics: dict[str, dict[str, list[float]]] = {
-        "Real": {
-            "Average Clustering": [],
-            "Average Path Length": [],
-            "Assortativity": [],
-            "Density": [],
-            "Network Size": [],
-        },
-        "Erdős-Rényi": {
-            "Average Clustering": [],
-            "Average Path Length": [],
-            "Assortativity": [],
-            "Density": [],
-            "Network Size": [],
-        },
-        "Barabási-Albert": {
-            "Average Clustering": [],
-            "Average Path Length": [],
-            "Assortativity": [],
-            "Density": [],
-            "Network Size": [],
-        },
-        "Watts-Strogatz": {
-            "Average Clustering": [],
-            "Average Path Length": [],
-            "Assortativity": [],
-            "Density": [],
-            "Network Size": [],
-        },
-    }
-
-    real_network = rp.Graph()
-
-    for ts in timestamps:
-        print(f"Processing {t}...")
-        count = 0
-
-        start_time = time.time()
-        with open(f"{STREAM_DIR}/{t}.jsonl", "r") as file:
-            for line in file:
-                try:
-                    record = json.loads(line.strip())
-                except json.JSONDecodeError as e:
-                    print(f"Error decoding JSON in file {STREAM_DIR}/{ts}: {e}")
-                    continue
-
-                if record["$type"] == "app.bsky.actor.profile":
-                    real_network.add_node(record["createdAt"], record["did"])
-                elif record["$type"] == "app.bsky.graph.follow":
-                    real_network.add_edge(
-                        record["createdAt"], record["did"], record["subject"]
-                    )
-                count += 1
-
-        print(
-            f"Processed {count} real records for {ts} in {time.time() - start_time:.2f} seconds"
-        )
-
-        # synthetic_networks = generate_synthetic_networks(
-        #     real_network.number_of_nodes(), real_network.number_of_edges()
-        # )
-
-        # Compute metrics for real network
-        start_metrics_time = time.time()
-        real_metrics = compute_metrics(real_network)
-        end_metrics_time = time.time()
-        print(
-            f"Computed metrics for real network in {end_metrics_time - start_metrics_time:.2f} seconds"
-        )
-
-        for metric, value in real_metrics.items():
-            metrics["Real"][metric].append(value)
-
-        # # Compute metrics for synthetic networks
-        # for name, network in synthetic_networks.items():
-        #     synth_metrics = compute_metrics(network)
-        #     for metric, value in synth_metrics.items():
-        #         metrics[name][metric].append(value)
-
-    plot_metrics_over_time(metrics, timestamps)
 
 
 # %% Efficiency testing
@@ -318,5 +189,3 @@ else:
     max_edges = V * (V - 1) / 2
 
 density = E / max_edges
-
-# %%
