@@ -1,70 +1,120 @@
+"""
+Crawl the repos of users from dids.csv and output the records to jsonl files.
+"""
+
 import csv
 import json
 import os
-from typing import Any, Generator, Iterable
+import shutil
+import typing as t
 
 import requests
 from libipld import decode_car  # type: ignore
 
 STREAM_DIR = "./stream"
 DID_PATH = "./dids.csv"
+
 START_DATE_CUTOFF = "2022-11-16"  # Start of bsky network
 END_DATE_CUTOFF = "2023-07-01"  # TODO: Extend
 
-
-def fetch_repo(did: str) -> Generator[dict[str, Any], None, None]:
-    res = requests.get(
-        f"https://bsky.network/xrpc/com.atproto.sync.getRepo?did={did}",
-    )
-
-    repo: tuple[dict, dict] = decode_car(res.content)
-    blocks: dict[str, dict[str, Any]] = dict(
-        sorted(repo[1].items(), key=lambda x: x[1].get("createdAt", "zzzzzzzzzzzz"))
-    )
-
-    for _, record in blocks.items():
-        if "createdAt" in record:
-            yield {
-                "did": did,
-                "$type": record["$type"],
-                "createdAt": record["createdAt"],
-                **record,
-            }
-        else:
-            break
+RECORD_TYPES = [
+    "app.bsky.feed.like",
+    "app.bsky.feed.post",
+    "app.bsky.feed.repost",
+    "app.bsky.graph.follow",
+    "app.bsky.graph.block",
+]
 
 
-def append_record(record: dict[str, Any], bucket_path: str):
-    with open(bucket_path, "a") as f:
+class BlockOp(t.TypedDict):
+    p: int  # Starting index of the previous key
+    k: bytes  # Remaining part of the key (after the previous key)
+    v: str  # Pointer to the block containing this op's data
+    t: str  # Pointer to the block containing pointer to the right
+    l: str  # Pointer to the block containing pointer to the left # noqa: E741
+
+
+def download_repo(did: str, log: bool = True) -> None:
+    try:
+        res = requests.get(
+            f"https://bsky.network/xrpc/com.atproto.sync.getRepo?did={did}",
+        )
+
+        if res.status_code != 200:
+            print(f"Failed to fetch {did}: {res.status_code} {res.text}")
+            return
+
+        repo = t.cast(
+            tuple[dict[str, t.Any], dict[str, dict[str, t.Any]]],
+            decode_car(res.content),
+        )
+        root, tree = repo
+
+    except Exception as e:
+        print(f"Error fetching repo for {did}: {e}")
+        return
+
+    uris = set()
+    total_records = 0
+    total_errors = 0
+
+    try:
+        for block in tree.values():
+            if "e" in block:
+                ops: list[BlockOp] = block["e"]
+                prev_key = ""
+
+                for op in ops:
+                    rkey = prev_key[: op["p"]] + op["k"].decode("utf-8")
+                    prev_key = rkey
+                    data_cid = op["v"]
+
+                    if rkey not in uris:
+                        uris.add(rkey)
+
+                        if data_cid in tree:  # Data exists @ pointer
+                            record = tree[data_cid]
+
+                            if record["$type"] in RECORD_TYPES:
+                                try:
+                                    save_record(
+                                        {
+                                            "did": did,
+                                            "$type": record.get("$type", ""),
+                                            "createdAt": record.get("createdAt", ""),
+                                            "uri": f"at://{did}/{rkey}",
+                                            **record,
+                                        }
+                                    )
+                                    total_records += 1
+                                except Exception as e:
+                                    print(f"Error saving record: {e}")
+                                    total_errors += 1
+        if log:
+            print(f"Added {total_records} records for {did} ({total_errors} errors)")
+
+    except Exception as e:
+        print(f"Error processing repo for {did}: {e}")
+
+
+def save_record(record: dict[str, t.Any]):
+    file_idx = record["createdAt"][:10]  # YYYY-MM-DD
+    if file_idx > END_DATE_CUTOFF:
+        return
+
+    if file_idx < START_DATE_CUTOFF:
+        return
+
+    with open(f"{STREAM_DIR}/{file_idx}.jsonl", "a") as f:
         json.dump(record, f)
         f.write("\n")
 
 
-def distribute_records(records: Iterable[dict[str, Any]], log: bool = True) -> None:
-    total_records = 0
-
-    try:
-        for record in records:
-            file_idx = record["createdAt"][:10]  # YYYY-MM-DD
-            if file_idx > END_DATE_CUTOFF:
-                break
-
-            if file_idx < START_DATE_CUTOFF:
-                continue
-
-            file_path = f"{STREAM_DIR}/{file_idx}.jsonl"
-            append_record(record, file_path)
-
-            total_records += 1
-
-        if log:
-            print(f"Added {total_records} records.")
-    except Exception as e:
-        print("ERROR: ", e)
-
-
 if __name__ == "__main__":
-    os.makedirs(STREAM_DIR, exist_ok=True)
+    if os.path.exists(STREAM_DIR):
+        shutil.rmtree(STREAM_DIR)
+    os.makedirs(STREAM_DIR)
+
     total_users = 0
 
     with open(DID_PATH, "r") as csvfile:
@@ -76,16 +126,10 @@ if __name__ == "__main__":
             if created_at[:10] > END_DATE_CUTOFF:
                 break
 
-            print("PROCESSING: ", did)
-            profile_create_record = {
-                "did": did,
-                "$type": "app.bsky.actor.profile",
-                "createdAt": created_at,
-            }
-            distribute_records([profile_create_record], False)
-
-            records = fetch_repo(did)
-            distribute_records(records)
+            save_record(
+                {"did": did, "$type": "app.bsky.actor.profile", "createdAt": created_at}
+            )
+            download_repo(did)
 
             total_users += 1
 
