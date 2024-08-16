@@ -110,6 +110,7 @@ def save_record(record: dict[str, t.Any]):
         f.write("\n")
 
 
+# TODO: Make this faster (more threads?)
 if __name__ == "__main__":
     if os.path.exists(STREAM_DIR):
         shutil.rmtree(STREAM_DIR)
